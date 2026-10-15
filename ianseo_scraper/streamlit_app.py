@@ -550,7 +550,21 @@ if st.session_state.view_mode == 'bigdata':
                                         key="merge_anchor_dropdown",
                                         help="Pilih nama atlet utama. Sistem akan otomatis mendeteksi variasi nama yang mirip di sebelah kanan."
                                     )
-                                    primary_athlete_name = anchor_athlete
+                                    custom_name_toggle = st.checkbox(
+                                        "✏️ Edit Nama Resmi (Kustom / Hapus Kata)",
+                                        value=False,
+                                        key=f"custom_name_toggle_{anchor_athlete}",
+                                        help="Centang jika ingin mengubah/menghapus kata tertentu (seperti menghapus kata 'Sirkuit', nama klub, singkatan, dsb)."
+                                    )
+                                    if custom_name_toggle:
+                                        custom_name_input = st.text_input(
+                                            "Ketik nama resmi yang bersih:",
+                                            value=anchor_athlete,
+                                            key=f"custom_name_input_{anchor_athlete}"
+                                        )
+                                        primary_athlete_name = custom_name_input.strip() if custom_name_input.strip() else anchor_athlete
+                                    else:
+                                        primary_athlete_name = anchor_athlete
                                 
                                 current_extra = st.session_state["extra_merge_dict"].get(anchor_athlete, [])
                                 auto_suggs = get_similar_name_suggestions(anchor_athlete, matched_names)
@@ -613,8 +627,8 @@ if st.session_state.view_mode == 'bigdata':
                                                 st.session_state["extra_merge_dict"][anchor_athlete].remove(ex)
                                                 st.rerun()
 
-                                if len(selected_athletes) > 1:
-                                    st.success(f"🔗 **Merge Sementara Aktif:** Menggabungkan data dari {len(selected_athletes)} variasi penulisan nama di analisis ini.")
+                                if len(selected_athletes) > 1 or primary_athlete_name != anchor_athlete:
+                                    st.success(f"🔗 **Merge Sementara Aktif:** Menggabungkan data dari {len(selected_athletes)} variasi penulisan nama ke profil **{primary_athlete_name}**.")
                                     
                                     # Opsi Simpan Merge Permanen ke Database
                                     alias_to_merge = [a for a in selected_athletes if a != primary_athlete_name]
@@ -649,6 +663,29 @@ if st.session_state.view_mode == 'bigdata':
                                         df_hist = pd.DataFrame(db_history)
                                         df_hist.columns = ["Nama Asal (Alias)", "Nama Resmi (Tujuan)", "Jumlah Record", "Waktu Merge"]
                                         st.dataframe(df_hist, use_container_width=True, hide_index=True)
+                                        
+                                        # Batalkan Merge jika salah
+                                        st.markdown("##### ↩️ Batalkan Salah Satu Merge (Revert):")
+                                        col_un1, col_un2 = st.columns([3, 1])
+                                        with col_un1:
+                                            unmerge_options = [f"{h['alias_name']} ➔ {h['canonical_name']} ({h['records_count']} data)" for h in db_history]
+                                            selected_unmerge_str = st.selectbox("Pilih riwayat yang ingin dibatalkan:", unmerge_options, key="unmerge_item_select")
+                                            selected_idx = unmerge_options.index(selected_unmerge_str)
+                                            target_unmerge = db_history[selected_idx]
+                                        with col_un2:
+                                            st.write("")
+                                            st.write("")
+                                            if st.button("↩️ Batalkan Merge Ini", type="secondary", key="btn_execute_unmerge"):
+                                                with st.spinner("Membatalkan merge..."):
+                                                    db = ArcheryDatabase()
+                                                    unres = db.unmerge_athlete(target_unmerge["alias_name"], target_unmerge["canonical_name"])
+                                                    if unres["success"]:
+                                                        st.cache_data.clear()
+                                                        st.success(f"✅ Berhasil! Nama '{target_unmerge['canonical_name']}' dikembalikan menjadi '{target_unmerge['alias_name']}'.")
+                                                        time.sleep(1.2)
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(f"❌ Gagal membatalkan: {unres.get('error')}")
                             
                             else:  # "👥 Gabung Semua Hasil Pencarian"
                                 if len(matched_names) > 50:

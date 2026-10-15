@@ -430,6 +430,37 @@ class ArcheryDatabase:
         finally:
             conn.close()
 
+    def unmerge_athlete(self, alias_name: str, canonical_name: str) -> dict:
+        """Revert a previously merged alias back to its original alias_name."""
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            # Update canonical_name back to alias_name
+            conn.execute("""
+                UPDATE athletes
+                SET athlete_name = ?
+                WHERE athlete_name = ?
+            """, [alias_name, canonical_name])
+
+            # Remove from log
+            conn.execute("""
+                DELETE FROM athlete_aliases
+                WHERE alias_name = ? AND canonical_name = ?
+            """, [alias_name, canonical_name])
+
+            conn.execute("COMMIT")
+            logger.info(f"Unmerged '{canonical_name}' back to '{alias_name}'")
+            return {"success": True}
+        except Exception as e:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            logger.error(f"Error unmerging athlete: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            conn.close()
+
     # ── Parquet integration ──────────────────────────────────────────
 
     def export_to_parquet(self) -> dict:
